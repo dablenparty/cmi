@@ -46,16 +46,21 @@ struct CurseManifest {
     version: String,
 }
 
-impl CurseManifest {
+pub struct CurseModpack {
+    manifest: CurseManifest,
+    archive: ZipFileReader<tokio::fs::File>,
+}
+
+impl CurseModpack {
     pub async fn load(path: &Path) -> crate::error::Result<Self> {
-        let mut file = tokio::fs::File::open(path).await?;
-        let mut archive = ZipFileReader::new(&mut file).await?;
+        let file = tokio::fs::File::open(path).await?;
+        let mut archive = ZipFileReader::new(file).await?;
         for (i, entry) in archive.entries().iter().enumerate() {
             if entry.filename() == "manifest.json" {
                 let reader = archive.entry_reader(i).await?;
-                let manifest_text = reader.read_to_string_crc().await?;
-                let manifest = serde_json::from_str(&manifest_text)?;
-                return Ok(manifest);
+                let text = reader.read_to_string_crc().await?;
+                let manifest: CurseManifest = serde_json::from_str(&text)?;
+                return Ok(Self { manifest, archive });
             }
         }
         Err(io::Error::new(io::ErrorKind::NotFound, "manifest.json not found").into())
