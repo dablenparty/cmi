@@ -3,6 +3,7 @@ use std::{error, fmt, io};
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum Error {
+    DablenutilError(dablenutil::Error),
     IoError(io::Error),
     ReqwestError(reqwest::Error),
     SerdeJsonError(serde_json::Error),
@@ -18,6 +19,7 @@ impl fmt::Display for Error {
             Error::ReqwestError(err) => write!(f, "Reqwest error: {}", err),
             Error::ZipError(err) => write!(f, "Zip error: {}", err),
             Error::SerdeJsonError(err) => write!(f, "Serde JSON error: {}", err),
+            Error::DablenutilError(err) => write!(f, "Dablenutil error: {}", err),
         }
     }
 }
@@ -45,5 +47,11 @@ impl From<async_zip::error::ZipError> for Error {
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
         Error::SerdeJsonError(err)
+    }
+}
+
+impl From<dablenutil::Error> for Error {
+    fn from(err: dablenutil::Error) -> Self {
+        Error::DablenutilError(err)
     }
 }
