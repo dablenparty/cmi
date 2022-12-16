@@ -5,6 +5,8 @@ use std::{error, fmt, io};
 pub enum Error {
     IoError(io::Error),
     ReqwestError(reqwest::Error),
+    SerdeJsonError(serde_json::Error),
+    ZipError(async_zip::error::ZipError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -14,6 +16,8 @@ impl fmt::Display for Error {
         match self {
             Error::IoError(err) => write!(f, "IO error: {}", err),
             Error::ReqwestError(err) => write!(f, "Reqwest error: {}", err),
+            Error::ZipError(err) => write!(f, "Zip error: {}", err),
+            Error::SerdeJsonError(err) => write!(f, "Serde JSON error: {}", err),
         }
     }
 }
@@ -29,5 +33,17 @@ impl From<io::Error> for Error {
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::ReqwestError(err)
+    }
+}
+
+impl From<async_zip::error::ZipError> for Error {
+    fn from(err: async_zip::error::ZipError) -> Self {
+        Error::ZipError(err)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        Error::SerdeJsonError(err)
     }
 }
