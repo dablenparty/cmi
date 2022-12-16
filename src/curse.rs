@@ -1,3 +1,6 @@
+use std::{io, path::Path};
+
+use async_zip::read::seek::ZipFileReader;
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -41,4 +44,20 @@ struct CurseManifest {
     name: String,
     overrides: String,
     version: String,
+}
+
+impl CurseManifest {
+    pub async fn load(path: &Path) -> crate::error::Result<Self> {
+        let mut file = tokio::fs::File::open(path).await?;
+        let mut archive = ZipFileReader::new(&mut file).await?;
+        for (i, entry) in archive.entries().iter().enumerate() {
+            if entry.filename() == "manifest.json" {
+                let reader = archive.entry_reader(i).await?;
+                let manifest_text = reader.read_to_string_crc().await?;
+                let manifest = serde_json::from_str(&manifest_text)?;
+                return Ok(manifest);
+            }
+        }
+        Err(io::Error::new(io::ErrorKind::NotFound, "manifest.json not found").into())
+    }
 }
