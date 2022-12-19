@@ -7,6 +7,7 @@ use curse::CurseModpack;
 
 mod curse;
 mod error;
+mod util;
 
 #[tokio::main]
 async fn main() {
