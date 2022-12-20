@@ -19,6 +19,6 @@ async fn main() {
     let target = Path::new(&target);
     let zip = Path::new(&zip);
 
-    let modpack = CurseModpack::load(zip).await.unwrap();
+    let mut modpack = CurseModpack::load(zip).await.unwrap();
     modpack.install_to(target).await.unwrap();
 }
