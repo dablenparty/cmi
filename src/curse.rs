@@ -9,6 +9,8 @@ use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::Deserialize;
 
+use crate::util::sanitize_zip_filename;
+
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct CurseFile {
     #[serde(rename = "fileID")]
@@ -113,7 +115,37 @@ impl CurseModpack {
         Err(io::Error::new(io::ErrorKind::NotFound, "manifest.json not found").into())
     }
 
-    pub async fn install_to(&self, target: &Path) -> crate::error::Result<()> {
+    async fn copy_overrides(&mut self, target: &Path) -> crate::error::Result<()> {
+        let entry_count = self.archive.entries().len();
+        for i in 0..entry_count {
+            let mut entry_reader = self.archive.entry_reader(i).await?;
+            let entry = entry_reader.entry();
+            let entry_name = entry.filename();
+            let file_name = sanitize_zip_filename(entry_name)
+                .expect(format!("Invalid filename: {}", entry_name).as_str());
+            // ensure that the file is in the overrides folder and not a directory
+            if !file_name.starts_with(&self.manifest.overrides)
+                || entry_name.ends_with("/")
+                || entry_name.ends_with("\\")
+            {
+                continue;
+            }
+            let file_name = file_name.strip_prefix(&self.manifest.overrides).unwrap();
+            let target_path = target.join(&file_name);
+            if target_path.exists() {
+                // log this
+                continue;
+            }
+            // log this
+            let parent = target_path.parent().unwrap();
+            dablenutil::tokio::async_create_dir_if_not_exists(parent).await?;
+            let mut file_handle = tokio::fs::File::create(&target_path).await?;
+            tokio::io::copy(&mut entry_reader, &mut file_handle).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn install_to(&mut self, target: &Path) -> crate::error::Result<()> {
         if !target.is_dir() {
             return Err(
                 io::Error::new(io::ErrorKind::NotFound, "target is not a directory").into(),
@@ -158,7 +190,7 @@ impl CurseModpack {
                 }
             })
             .await;
-
+        self.copy_overrides(target).await?;
         Ok(())
     }
 }
