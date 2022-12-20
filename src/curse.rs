@@ -1,11 +1,12 @@
 use std::{
-    io,
+    fmt, io,
     path::{Path, PathBuf},
 };
 
 use async_zip::read::seek::ZipFileReader;
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
+use log::{debug, error, info};
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -33,6 +34,7 @@ impl CurseFileInfo {
             static ref ILLEGAL_CHARS: regex::Regex = regex::Regex::new(r#"[\\/:*?"<>|]"#)
                 .expect("Failed to compile ILLEGAL_CHARS regex");
         }
+        debug!("Downloading {}", self.display_name);
         let parent_folder = if self.file_name.ends_with("zip") {
             "resourcepacks"
         } else {
@@ -100,6 +102,12 @@ pub struct CurseModpack {
     archive: ZipFileReader<tokio::fs::File>,
 }
 
+impl fmt::Display for CurseModpack {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.manifest.name, self.manifest.version)
+    }
+}
+
 impl CurseModpack {
     pub async fn load(path: &Path) -> crate::error::Result<Self> {
         let file = tokio::fs::File::open(path).await?;
@@ -133,11 +141,11 @@ impl CurseModpack {
             let file_name = file_name.strip_prefix(&self.manifest.overrides).unwrap();
             let target_path = target.join(file_name);
             if target_path.exists() {
-                // log this
+                debug!("{} already exists, skipping", target_path.display());
                 continue;
             }
-            // log this
             let parent = target_path.parent().unwrap();
+            debug!("Copying {} to {}", entry_name, target_path.display());
             dablenutil::tokio::async_create_dir_if_not_exists(parent).await?;
             let mut file_handle = tokio::fs::File::create(&target_path).await?;
             tokio::io::copy(&mut entry_reader, &mut file_handle).await?;
@@ -151,40 +159,59 @@ impl CurseModpack {
                 io::Error::new(io::ErrorKind::NotFound, "target is not a directory").into(),
             );
         }
+        info!(
+            "Beginning install of {} to {}",
+            self.manifest.name,
+            target.display()
+        );
         let num_cpus = num_cpus::get();
         let client = Client::new();
         let api_key = std::env::var("CURSE_API_KEY").expect("CURSE_API_KEY not set");
+        info!("Downloading {} files", self.manifest.files.len());
         stream::iter(&self.manifest.files)
             .map(|file| {
                 let client = &client;
                 let api_key = &api_key;
                 async move {
-                    let info = file.get_info(client, api_key).await?;
-                    Ok::<_, crate::error::Error>(info)
+                    match file.get_info(client, api_key).await {
+                        Ok(info) => {
+                            debug!("{} info retrieved", info.file_name);
+                            Some(info)
+                        }
+                        Err(e) => {
+                            error!("Failed to get info for {}", file.file_id);
+                            error!("{:?}", e);
+                            None
+                        }
+                    }
                 }
             })
             .buffer_unordered(num_cpus * 2)
+            // using filter_map directly above doesn't allow for buffering
+            .filter_map(futures::future::ready)
             .for_each_concurrent(num_cpus, |info| {
                 let target = &target;
                 let client = &client;
                 async move {
-                    match info {
-                        Ok(info) => {
-                            match info.download(client, target).await {
-                                Ok(_) => {
-                                    // log success
-                                }
-                                Err(e) => {
-                                    // log error
-                                    eprintln!("Failed to download {}", info.file_name);
-                                    eprintln!("{:?}", e);
-                                }
-                            }
-                            // log success
+                    match info.download(client, target).await {
+                        Ok(p) => {
+                            debug!("{} downloaded to {}", info.file_name, p.display());
                         }
                         Err(e) => {
-                            // log error
-                            eprintln!("{:?}", e);
+                            if let crate::error::Error::IoError(e) = e {
+                                if e.kind() == io::ErrorKind::NotFound {
+                                    error!(
+                                        "Failed to download {}, no download URL found",
+                                        info.file_name
+                                    );
+                                } else {
+                                    error!("Failed to download {}", info.file_name);
+                                    error!("{:?}", e);
+                                }
+                            } else {
+                                error!("Failed to download {}", info.file_name);
+                                error!("{:?}", e);
+                            }
                         }
                     }
                 }
