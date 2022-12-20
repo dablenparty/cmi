@@ -22,11 +22,15 @@ struct CommandLineArgs {
 }
 
 #[tokio::main]
-async fn main() {
-    dotenv::dotenv().expect("Failed to load .env");
+async fn main() -> crate::error::Result<()> {
+    dotenv::dotenv().unwrap_or_else(|e| {
+        panic!("Failed to load .env file: {}", e);
+    });
 
     let args = CommandLineArgs::parse();
 
-    let mut modpack = CurseModpack::load(&args.modpack_zip).await.unwrap();
-    modpack.install_to(&args.target).await.unwrap();
+    let mut modpack = CurseModpack::load(&args.modpack_zip).await?;
+    modpack.install_to(&args.target).await?;
+
+    Ok(())
 }
