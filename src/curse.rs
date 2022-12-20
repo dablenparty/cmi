@@ -122,16 +122,16 @@ impl CurseModpack {
             let entry = entry_reader.entry();
             let entry_name = entry.filename();
             let file_name = sanitize_zip_filename(entry_name)
-                .expect(format!("Invalid filename: {}", entry_name).as_str());
+                .unwrap_or_else(|| panic!("Invalid filename: {}", entry_name));
             // ensure that the file is in the overrides folder and not a directory
             if !file_name.starts_with(&self.manifest.overrides)
-                || entry_name.ends_with("/")
-                || entry_name.ends_with("\\")
+                || entry_name.ends_with('/')
+                || entry_name.ends_with('\\')
             {
                 continue;
             }
             let file_name = file_name.strip_prefix(&self.manifest.overrides).unwrap();
-            let target_path = target.join(&file_name);
+            let target_path = target.join(file_name);
             if target_path.exists() {
                 // log this
                 continue;
