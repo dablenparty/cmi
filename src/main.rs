@@ -6,7 +6,6 @@ use std::{env, path::PathBuf};
 use clap::Parser;
 use curse::CurseModpack;
 use log::info;
-use tokio::io::AsyncWriteExt;
 
 mod curse;
 mod error;
@@ -62,19 +61,25 @@ async fn get_poly_key() -> crate::error::Result<String> {
 
 async fn set_poly_key_dotenv() -> crate::error::Result<()> {
     let token = get_poly_key().await?;
-    let token_string = format!("\nCURSE_API_KEY='{}'\n", token);
+    let token_string = format!("CURSE_API_KEY='{}'\n", token);
     let path = PathBuf::from(".env");
-    if path.exists() {
-        // append to existing file
-        let mut file = tokio::fs::OpenOptions::new()
-            .append(true)
-            .open(".env")
-            .await?;
-        file.write_all(token_string.as_bytes()).await?;
+    let contents = if !path.exists() {
+        token_string
     } else {
-        // create new file
-        tokio::fs::write(".env", token_string).await?;
-    }
+        // removes the CURSE_API_KEY line if it exists, then appends the new one
+        let contents = tokio::fs::read_to_string(".env").await?;
+        let mut new_contents = contents
+            .lines()
+            .filter(|line| !line.starts_with("CURSE_API_KEY"))
+            .fold(String::with_capacity(contents.len()), |mut acc, line| {
+                acc.push_str(line);
+                acc.push_str("\n");
+                acc
+            });
+        new_contents.push_str(&token_string);
+        new_contents
+    };
+    tokio::fs::write(path, contents).await?;
     Ok(())
 }
 
