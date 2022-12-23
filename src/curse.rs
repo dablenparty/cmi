@@ -124,7 +124,9 @@ impl CurseModpack {
     }
 
     async fn copy_overrides(&mut self, target: &Path) -> crate::error::Result<()> {
+        info!("Copying overrides...");
         let entry_count = self.archive.entries().len();
+        let mut overrides_count = 0;
         for i in 0..entry_count {
             let mut entry_reader = self.archive.entry_reader(i).await?;
             let entry = entry_reader.entry();
@@ -149,7 +151,9 @@ impl CurseModpack {
             dablenutil::tokio::async_create_dir_if_not_exists(parent).await?;
             let mut file_handle = tokio::fs::File::create(&target_path).await?;
             tokio::io::copy(&mut entry_reader, &mut file_handle).await?;
+            overrides_count += 1;
         }
+        info!("Copied {} overrides", overrides_count);
         Ok(())
     }
 
