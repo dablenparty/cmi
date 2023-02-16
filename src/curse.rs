@@ -18,8 +18,6 @@ const BASE_CURSE_URL: &str = "https://api.curseforge.com";
 struct CurseFile {
     #[serde(rename = "fileID")]
     file_id: u32,
-    #[serde(rename = "projectID")]
-    project_id: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,35 +58,6 @@ impl CurseFileInfo {
         Ok(path)
     }
 }
-
-impl CurseFile {
-    async fn get_info(
-        &self,
-        client: &Client,
-        api_key: &str,
-    ) -> crate::error::Result<CurseFileInfo> {
-        let endpoint = format!("/v1/mods/{}/files/{}", self.project_id, self.file_id);
-        let url = format!("{}{}", BASE_CURSE_URL, endpoint);
-        let response = client
-            .get(&url)
-            .header("Accept", "application/json")
-            .header("x-api-key", api_key)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<serde_json::Value>()
-            .await?;
-        let data = response.get("data").ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "data not found in curseforge response",
-            )
-        })?;
-        let info: CurseFileInfo = serde_json::from_value(data.clone())?;
-        Ok(info)
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CurseManifest {

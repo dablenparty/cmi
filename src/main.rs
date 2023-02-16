@@ -49,8 +49,8 @@ async fn get_poly_key() -> crate::error::Result<String> {
         .error_for_status()?;
     let json: serde_json::Value = response.json().await?;
     json.get("token")
-        .and_then(|token| token.as_str())
-        .map(|token| token.to_owned())
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
         .ok_or_else(|| {
             crate::error::Error::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -63,9 +63,7 @@ async fn set_poly_key_dotenv() -> crate::error::Result<()> {
     let token = get_poly_key().await?;
     let token_string = format!("CURSE_API_KEY='{}'\n", token);
     let path = PathBuf::from(".env");
-    let contents = if !path.exists() {
-        token_string
-    } else {
+    let contents = if path.exists() {
         // removes the CURSE_API_KEY line if it exists, then appends the new one
         let contents = tokio::fs::read_to_string(".env").await?;
         let mut new_contents = contents
@@ -73,11 +71,13 @@ async fn set_poly_key_dotenv() -> crate::error::Result<()> {
             .filter(|line| !line.starts_with("CURSE_API_KEY"))
             .fold(String::with_capacity(contents.len()), |mut acc, line| {
                 acc.push_str(line);
-                acc.push_str("\n");
+                acc.push('\n');
                 acc
             });
         new_contents.push_str(&token_string);
         new_contents
+    } else {
+        token_string
     };
     tokio::fs::write(path, contents).await?;
     Ok(())
@@ -96,9 +96,7 @@ async fn main() -> crate::error::Result<()> {
     });
 
     let curse_api_key = std::env::var_os("CURSE_API_KEY");
-    if curse_api_key.is_none() {
-        panic!("CURSE_API_KEY not set.\nIf you'd like to fetch the key used by PolyMC, rerun this program with the --use-poly-api-key flag.\nOtherwise, set the CURSE_API_KEY environment variable to your Curse API key (.env files are supported).");
-    }
+    assert!(curse_api_key.is_some(), "CURSE_API_KEY not set.\nIf you'd like to fetch the key used by PolyMC, rerun this program with the --use-poly-api-key flag.\nOtherwise, set the CURSE_API_KEY environment variable to your Curse API key (.env files are supported).");
 
     setup_logging(args.log_level)?;
 
