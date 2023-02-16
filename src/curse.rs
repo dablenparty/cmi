@@ -12,6 +12,8 @@ use serde::Deserialize;
 
 use crate::util::sanitize_zip_filename;
 
+const BASE_CURSE_URL: &str = "https://api.curseforge.com";
+
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct CurseFile {
     #[serde(rename = "fileID")]
@@ -65,7 +67,6 @@ impl CurseFile {
         client: &Client,
         api_key: &str,
     ) -> crate::error::Result<CurseFileInfo> {
-        const BASE_CURSE_URL: &str = "https://api.curseforge.com";
         let endpoint = format!("/v1/mods/{}/files/{}", self.project_id, self.file_id);
         let url = format!("{}{}", BASE_CURSE_URL, endpoint);
         let response = client
@@ -169,30 +170,40 @@ impl CurseModpack {
             target.display()
         );
         let num_cpus = num_cpus::get();
+        // collect file id's into json array
+        let file_ids: Vec<_> = self
+            .manifest
+            .files
+            .iter()
+            .map(|file| file.file_id)
+            .collect();
+        let file_ids = serde_json::to_string(&file_ids)?;
+        let body = format!("{{\"fileIds\":{}}}", file_ids);
         let client = Client::new();
         let api_key = std::env::var("CURSE_API_KEY").expect("CURSE_API_KEY not set");
         info!("Downloading {} files", self.manifest.files.len());
-        stream::iter(&self.manifest.files)
-            .map(|file| {
-                let client = &client;
-                let api_key = &api_key;
-                async move {
-                    match file.get_info(client, api_key).await {
-                        Ok(info) => {
-                            debug!("{} info retrieved", info.file_name);
-                            Some(info)
-                        }
-                        Err(e) => {
-                            error!("Failed to get info for {}", file.file_id);
-                            error!("{:?}", e);
-                            None
-                        }
-                    }
-                }
-            })
-            .buffer_unordered(num_cpus * 2)
-            // using filter_map directly above doesn't allow for buffering
-            .filter_map(futures::future::ready)
+        let url = format!("{}/v1/mods/files", BASE_CURSE_URL);
+        let response = client
+            .post(url)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("x-api-key", api_key)
+            .body(body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?;
+        let file_infos = response
+            .get("data")
+            .map(|data| serde_json::from_value::<Vec<CurseFileInfo>>(data.clone()))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "data not found in curseforge response",
+                )
+            })??;
+        stream::iter(file_infos)
             .for_each_concurrent(num_cpus, |info| {
                 let target = &target;
                 let client = &client;
