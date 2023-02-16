@@ -20,13 +20,13 @@ struct CommandLineArgs {
     /// The target directory to install to
     #[arg(required = true)]
     target: PathBuf,
-    /// The log level to use
-    /// Valid values are: error, warn, info, debug, trace
+    /// The log level to use: error, warn, info, debug, or trace
     #[clap(short, long, value_parser, default_value_t = log::LevelFilter::Info)]
     log_level: log::LevelFilter,
-    /// Use the PolyMC API key instead of the Curse API key
-    /// Note that by using this, you are technically violating Curse's TOS
-    /// This will override the CURSE_API_KEY environment variable
+    /// Use the PolyMC API key instead of the Curse API key.
+    /// Note that by using this, you are technically violating Curse's ToS.
+    /// This will override the CURSE_API_KEY environment variable, so it is
+    /// only required once.
     #[clap(long, default_value_t = false)]
     use_poly_api_key: bool,
 }
