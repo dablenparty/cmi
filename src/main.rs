@@ -102,7 +102,7 @@ async fn main() -> crate::error::Result<()> {
 
     setup_logging(args.log_level)?;
 
-    let mut modpack = CurseModpack::load(&args.modpack_zip).await?;
+    let mut modpack = CurseModpack::load(&args.modpack_zip)?;
     info!("Loaded modpack: {}", modpack);
     modpack.install_to(&args.target).await?;
 

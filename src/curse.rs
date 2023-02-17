@@ -3,14 +3,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use async_zip::read::seek::ZipFileReader;
 use futures::{stream, StreamExt};
 use lazy_static::lazy_static;
 use log::{debug, error, info};
 use reqwest::Client;
 use serde::Deserialize;
-
-use crate::util::sanitize_zip_filename;
+use zip::ZipArchive;
 
 const BASE_CURSE_URL: &str = "https://api.curseforge.com";
 
@@ -69,7 +67,7 @@ struct CurseManifest {
 
 pub struct CurseModpack {
     manifest: CurseManifest,
-    archive: ZipFileReader<tokio::fs::File>,
+    archive: ZipArchive<std::fs::File>,
 }
 
 impl fmt::Display for CurseModpack {
@@ -79,38 +77,27 @@ impl fmt::Display for CurseModpack {
 }
 
 impl CurseModpack {
-    pub async fn load(path: &Path) -> crate::error::Result<Self> {
-        let file = tokio::fs::File::open(path).await?;
-        let mut archive = ZipFileReader::new(file).await?;
-        for (i, entry) in archive.entries().iter().enumerate() {
-            if entry.filename() == "manifest.json" {
-                let reader = archive.entry_reader(i).await?;
-                let text = reader.read_to_string_crc().await?;
-                let manifest: CurseManifest = serde_json::from_str(&text)?;
-                return Ok(Self { manifest, archive });
-            }
-        }
-        Err(io::Error::new(io::ErrorKind::NotFound, "manifest.json not found").into())
+    pub fn load(path: &Path) -> crate::error::Result<Self> {
+        let file = std::fs::File::open(path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        let manifest_entry = archive.by_name("manifest.json")?;
+        let manifest: CurseManifest = serde_json::from_reader(manifest_entry)?;
+        Ok(Self { manifest, archive })
     }
 
-    async fn copy_overrides(&mut self, target: &Path) -> crate::error::Result<()> {
+    fn copy_overrides(&mut self, target: &Path) -> crate::error::Result<()> {
         info!("Copying overrides...");
-        let entry_count = self.archive.entries().len();
+        let entry_count = self.archive.len();
         let mut overrides_count = 0;
         for i in 0..entry_count {
-            let mut entry_reader = self.archive.entry_reader(i).await?;
-            let entry = entry_reader.entry();
-            let entry_name = entry.filename();
-            let file_name = sanitize_zip_filename(entry_name)
-                .unwrap_or_else(|| panic!("Invalid filename: {}", entry_name));
+            let mut file = self.archive.by_index(i)?;
+            let file_path = file.enclosed_name().expect("Zip file contains invalid path. This is indicative of a corrupt zip file or attempted zip slip attack.");
+            let entry_name = file_path.as_os_str().to_string_lossy();
             // ensure that the file is in the overrides folder and not a directory
-            if !file_name.starts_with(&self.manifest.overrides)
-                || entry_name.ends_with('/')
-                || entry_name.ends_with('\\')
-            {
+            if !file_path.starts_with(&self.manifest.overrides) || file.is_dir() {
                 continue;
             }
-            let file_name = file_name.strip_prefix(&self.manifest.overrides).unwrap();
+            let file_name = file_path.strip_prefix(&self.manifest.overrides).unwrap();
             let target_path = target.join(file_name);
             if target_path.exists() {
                 debug!("{} already exists, skipping", target_path.display());
@@ -118,9 +105,9 @@ impl CurseModpack {
             }
             let parent = target_path.parent().unwrap();
             debug!("Copying {} to {}", entry_name, target_path.display());
-            dablenutil::tokio::async_create_dir_if_not_exists(parent).await?;
-            let mut file_handle = tokio::fs::File::create(&target_path).await?;
-            tokio::io::copy(&mut entry_reader, &mut file_handle).await?;
+            dablenutil::create_dir_if_not_exists(parent)?;
+            let mut file_handle = std::fs::File::create(&target_path)?;
+            std::io::copy(&mut file, &mut file_handle)?;
             overrides_count += 1;
         }
         info!("Copied {} overrides", overrides_count);
@@ -201,7 +188,7 @@ impl CurseModpack {
                 }
             })
             .await;
-        self.copy_overrides(target).await?;
+        self.copy_overrides(target)?;
         Ok(())
     }
 }
