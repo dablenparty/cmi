@@ -34,9 +34,11 @@ struct CommandLineArgs {
 fn setup_logging(log_level: log::LevelFilter) -> crate::error::Result<()> {
     let current_exe = env::current_exe()?;
     let log_folder = current_exe.with_file_name("cmi-logs");
-    let package_name = env!("CARGO_PKG_NAME");
-    let latest_log_file = dablenutil::logging::rotate_logs(&log_folder, Some(package_name))?;
-    dablenutil::logging::init_simple_logger(&latest_log_file, log_level)?;
+    let logging_config = dablenutil::logging::LoggingConfig::new(log_folder)
+        .file_level_filter(log_level)
+        .term_level_filter(log_level);
+    dablenutil::logging::rotate_logs(&logging_config)?;
+    dablenutil::logging::init_simple_logger(&logging_config)?;
     Ok(())
 }
 
