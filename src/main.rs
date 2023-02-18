@@ -9,7 +9,6 @@ use log::info;
 
 mod curse;
 mod error;
-mod util;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
