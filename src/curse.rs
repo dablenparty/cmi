@@ -32,7 +32,7 @@ impl CurseFileInfo {
             static ref ILLEGAL_CHARS: regex::Regex = regex::Regex::new(r#"[\\/:*?"<>|]"#)
                 .expect("Failed to compile ILLEGAL_CHARS regex");
         }
-        debug!("Downloading {}", self.display_name);
+        info!("Downloading {}", self.display_name);
         let parent_folder = if self.file_name.ends_with("zip") {
             "resourcepacks"
         } else {
@@ -89,6 +89,7 @@ impl CurseModpack {
         info!("Copying overrides...");
         let entry_count = self.archive.len();
         let mut overrides_count = 0;
+        let mut exists_count = 0;
         for i in 0..entry_count {
             let mut file = self.archive.by_index(i)?;
             let file_path = file.enclosed_name().expect("Zip file contains invalid path. This is indicative of a corrupt zip file or attempted zip slip attack.");
@@ -101,6 +102,7 @@ impl CurseModpack {
             let target_path = target.join(file_name);
             if target_path.exists() {
                 debug!("{} already exists, skipping", target_path.display());
+                exists_count += 1;
                 continue;
             }
             let parent = target_path.parent().unwrap();
@@ -110,7 +112,12 @@ impl CurseModpack {
             std::io::copy(&mut file, &mut file_handle)?;
             overrides_count += 1;
         }
-        info!("Copied {} overrides", overrides_count);
+        if overrides_count > 0 {
+            info!("Copied {} overrides", overrides_count);
+        }
+        if exists_count > 0 {
+            info!("Skipped {} existing overrides", exists_count);
+        }
         Ok(())
     }
 
